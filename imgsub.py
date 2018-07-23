@@ -88,6 +88,40 @@ def intersection(a,b):
   if w<0 or h<0: return () # or (0,0,0,0) ?
   return (x, y, w, h)
 
+
+def write_to_file(tm, centers, frame):
+    for _c, _cc in centers.iteritems():
+        mask = np.zeros_like(frame[:,:,0])  # Create mask where white is what we want, black otherwise
+
+    #@note When thickness=#FILLED, the function is designed to handle connected components with holes correctly
+    # .   even when no hierarchy date is provided. This is done by analyzing all the outlines together
+    # .   using even-odd rule. This may give incorrect results if you have a joint collection of separately retrieved
+    # .   contours. In order to solve this problem, you need to call #drawContours separately for each sub-group
+    # .   of contours, or iterate over the collection using contourIdx parameter.
+        for _ccc in _cc:
+            cv2.drawContours(mask, [_ccc], -1, 255, -1, maxLevel=3)  # Draw filled contour in mask
+        # out = np.zeros_like(frame, subok=True)  # Extract out the object and place into output image
+
+
+        img_height, img_width = frame.shape[:2]
+        n_channels = 4
+        out = np.zeros((img_height, img_width, n_channels), dtype=np.uint8)
+
+        for _i in xrange(3):
+            _frame = frame[:,:,_i]
+            # __frame = _frame[mask == 255]
+            out[mask == 255,_i] = _frame[mask == 255]
+        out[:,:,3] = mask
+
+        cv2.imshow('mask', mask)
+        cv2.imshow('out', out)
+
+        # out[mask == (255, 255, 255)] = frame[mask == (255, 255, 255)].copy()
+        # Save the image for visualization
+        cv2.imwrite("./trans_{tm}_{x}_{y}.png".format(tm=tm, x=_c[0], y=_c[1]), out,params=[cv2.IMWRITE_PNG_COMPRESSION, 9])
+
+
+
 if __name__ == "__main__":
 
     mp4file, objtemplate, initTime, startTime, endTime = parse_options()
@@ -119,7 +153,7 @@ if __name__ == "__main__":
     feature_params = dict(maxCorners=100,
                           qualityLevel=0.3,
                           minDistance=7,
-                          blockSize=7)
+                          blockSize=7, useHarrisDetector=True)
 
     # Parameters for lucas kanade optical flow
     lk_params = dict(winSize=(15, 15),
@@ -178,8 +212,8 @@ if __name__ == "__main__":
         # frameGray = cv2.blur(frameGray, (7,3))
         # frameGray = cv2.fastNlMeansDenoising(frameGray, None, 10, 10)
 
-        frameDelta = cv2.absdiff(initGray, frameGray)
-        cv2.imshow('frameDelta', frameDelta)
+        # frameDelta = cv2.absdiff(initGray, frameGray)
+        # cv2.imshow('frameDelta', frameDelta)
 
         # fgmask = tr1.apply(frameGray)
         # cv2.imshow('fgmask', fgmask)
@@ -197,7 +231,7 @@ if __name__ == "__main__":
         hsv[..., 2] = cv2.normalize(mag, None, 0, 255, cv2.NORM_MINMAX)
         rgb = cv2.cvtColor(hsv, cv2.COLOR_HSV2BGR)
         # rgb = cv2.fastNlMeansDenoisingColored(rgb, None,10,10,37,21)
-        cv2.imshow('flow', rgb)
+        # cv2.imshow('flow', rgb)
 
 
 
@@ -234,22 +268,8 @@ if __name__ == "__main__":
 
         # img_, cnts, hie_ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         img_, contours, hie_ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-        contours = [cv2.approxPolyDP(cnt, 0, True) for cnt in contours]
+        contours = [cv2.approxPolyDP(cnt, 2, True) for cnt in contours]
         contours = [c for c in contours if cv2.contourArea(c) > 200]
-
-
-        # contours2 = []
-        # for _i in xrange(len(contours)):
-        #     for _ii in xrange(_i +1, len(contours)):
-        #         c = contours[_i]
-        #         cc = contours[_ii]
-        #         if not intersection(cv2.boundingRect(c), cv2.boundingRect(cc)):
-        #             continue
-        #         c = cv2.convexHull(c + cc)
-        #
-        #     contours2.append(c)
-        # contours = contours2
-
 
 
 
@@ -264,31 +284,6 @@ if __name__ == "__main__":
 
 
 
-
-        # def min_box(c):
-        #
-        #     if cv2.contourArea(c) < 500:
-        #          return False
-        #     r= cv2.boundingRect(c)
-        #
-        #     w= 0.0 + abs(r[0] - r[2])
-        #     h= 0.0 + abs(r[1] - r[3])
-        #     print r, w, h,
-        #
-        #     if h <2 or w <2 :#or h > height/2 or w > width/2:
-        #         print
-        #         return False
-        #     dd = w / h
-        #     print dd
-        #     return dd > 0.9 and dd < 4
-        # loop over the contours
-        # contours = [c for c in contours if min_box(c)]
-
-        # vis = np.zeros((height, width, 3), np.uint8)
-        #                image, contours, contourIdx, color[, thickness[, lineType[, hierarchy[, maxLevel[, offset]]]]]
-
-
-
         mask = np.zeros_like(frame)  # Create mask where white is what we want, black otherwise
 
 
@@ -297,15 +292,18 @@ if __name__ == "__main__":
         out[mask == 255] = frame[mask == 255]
 
         contours2 = []
-        centers = []
+        centers = {}
 
         nextPts = cv2.goodFeaturesToTrack(frameGray, mask=None, **feature_params)
 
+        showFrame = frame.copy()
         for c in contours:
             (x, y), radius = cv2.minEnclosingCircle(c)
             center = (int(x), int(y))
             if center[1] < height/3:
                 continue
+            _diz = (height - y) * 1.44 / height / 50.0
+            center2 = (int(x *_diz) , int(y *_diz))
             radius = int(radius)
             radius2 = radius * radius
             # a1= cv2.contourArea(c)
@@ -327,54 +325,32 @@ if __name__ == "__main__":
                 continue
 
             cv2.circle(out, center, radius, (0, 255, 0), 2)
-            cv2.circle(frame, center, radius, (0, 255, 0), 2)
-            contours2.append(c)
-            centers.append(center)
+            cv2.circle(showFrame, center, radius, (0, 255, 0), 2)
+            centers.setdefault(center2, []).append(c)
+
+        write_to_file(_n, centers, frame)
 
         good_new = nextPts
 
         _i = 0
         for p in good_new:
             a, b = p.ravel()
-            frame = cv2.circle(frame, (a, b), 5, color[_i].tolist(), -1)
+            # frame = \
+            cv2.circle(showFrame, (a, b), 5, color[_i].tolist(), -1)
             _i += 1
 
         centers = list(set(centers))
         contours = contours2
 
 
-        # flow = cv2.calcOpticalFlowFarneback(frameGray, initGray, None, 0.5, 2, 15, 3, 5, 1.2,
-        #                                     flags=cv2.OPTFLOW_USE_INITIAL_FLOW)
-
-
-        # stereo = cv2.StereoBM_create(numDisparities=16, blockSize=5)
-        #
-        # rgbGray = cv2.cvtColor(rgb, cv2.COLOR_BGR2GRAY)
-        # disparity = stereo.compute(rgbGray, initGray)
-        #
-        # cv2.imshow('disparity', disparity)
-
-
-        # ret = np.where(mask == 255)
-        # x, y = ret[:2]
-        # topx, topy = (np.min(x), np.min(y))
-        # bottomx, bottomy = (np.max(x), np.max(y))
-        # out = out[topx:bottomx + 1, topy:bottomy + 1]
-
-        # _cc = 10
-        # print "#", len(contours)
-        # for c in contours:
-        #     cv2.drawContours(vis, [c], -1, (_cc, 255 - _cc, 255-_cc), 3, 4)
-        #     _cc += 10
         cv2.imshow('contours', out)
-
-        cv2.imshow('frame', frame)
+        cv2.imshow('frame', showFrame)
 
 
 
         # prevFrame = frame.copy()
         prevGray = frameGray.copy()
-        prevDelta = frameDelta.copy()
+        # prevDelta = frameDelta.copy()
         prevPts = nextPts
         # prevFgmask = fgmask
 
