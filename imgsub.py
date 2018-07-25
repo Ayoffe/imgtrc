@@ -89,7 +89,7 @@ def intersection(a,b):
   return (x, y, w, h)
 
 
-def write_to_file(tm, centers, frame):
+def write_to_file(_dir, tm, centers, radius, frame):
     for _c, _cc in centers.iteritems():
         mask = np.zeros_like(frame[:,:,0])  # Create mask where white is what we want, black otherwise
 
@@ -99,9 +99,19 @@ def write_to_file(tm, centers, frame):
     # .   contours. In order to solve this problem, you need to call #drawContours separately for each sub-group
     # .   of contours, or iterate over the collection using contourIdx parameter.
         for _ccc in _cc:
-            cv2.drawContours(mask, [_ccc], -1, 255, -1, maxLevel=3)  # Draw filled contour in mask
-        # out = np.zeros_like(frame, subok=True)  # Extract out the object and place into output image
+            # cv2.drawContours(mask, [_ccc], -1, 255, -1, maxLevel=3)  # Draw filled contour in mask
+            # out = np.zeros_like(frame, subok=True)  # Extract out the object and place into output image
 
+            center, radius = cv2.minEnclosingCircle(_ccc)
+            center = (int(center[0] + .5), int(center[1] + .5))
+            radius = int(radius+1)
+            cv2.circle(mask, center, radius, 255, -1)
+            # rect = cv2.minAreaRect(_ccc)
+            # box = cv2.boxPoints(rect)  # cv2.boxPoints(rect) for OpenCV 3.x
+            # box = np.int0(box)
+            # cv2.drawContours(mask, [box], 0, 255, -1)
+
+        #
 
         img_height, img_width = frame.shape[:2]
         n_channels = 4
@@ -118,17 +128,25 @@ def write_to_file(tm, centers, frame):
 
         # out[mask == (255, 255, 255)] = frame[mask == (255, 255, 255)].copy()
         # Save the image for visualization
-        cv2.imwrite("./trans_{tm}_{x}_{y}.png".format(tm=tm, x=_c[0], y=_c[1]), out,params=[cv2.IMWRITE_PNG_COMPRESSION, 9])
+        cv2.imwrite("{dir}/trans_{tm}_{x}_{y}.png".format(dir=_dir, tm=tm, x=_c[0], y=_c[1]), out,params=[cv2.IMWRITE_PNG_COMPRESSION, 9])
 
 
 
 if __name__ == "__main__":
 
     mp4file, objtemplate, initTime, startTime, endTime = parse_options()
+
+    _dir = objtemplate
+
+    try:
+        os.makedirs(_dir)
+    except:
+        pass
+
     if os.path.exists(mp4file) == False:
         print 'Input file not exist  %s' % mp4file
         quit(1)
-
+    cv2.setUseOptimized(True)
     # capture from file
     cap = cv2.VideoCapture(mp4file)
     fps = cap.get(cv2.CAP_PROP_FPS)
@@ -302,8 +320,8 @@ if __name__ == "__main__":
             center = (int(x), int(y))
             if center[1] < height/3:
                 continue
-            _diz = (height - y) * 1.44 / height / 50.0
-            center2 = (int(x *_diz) , int(y *_diz))
+            _diz = (height - y) * 1.44 * 2 / height / 10.0
+            center2 = (int(x *_diz) , int(y * 2 *_diz), int((radius +1) *_diz))
             radius = int(radius)
             radius2 = radius * radius
             # a1= cv2.contourArea(c)
@@ -328,7 +346,7 @@ if __name__ == "__main__":
             cv2.circle(showFrame, center, radius, (0, 255, 0), 2)
             centers.setdefault(center2, []).append(c)
 
-        write_to_file(_n, centers, frame)
+        write_to_file(_dir, _n, centers, radius, frame)
 
         good_new = nextPts
 
